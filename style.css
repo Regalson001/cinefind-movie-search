@@ -1,0 +1,739 @@
+
+// ==========================================
+// CINEFIND — MODERN MOVIE SEARCH APPLICATION
+// ==========================================
+
+// 1. ADD YOUR TMDB API KEY HERE
+const API_KEY = "YOUR_TMDB_API_KEY";
+
+const API_BASE = "https://api.themoviedb.org/3";
+const IMAGE_BASE = "https://image.tmdb.org/t/p/";
+
+const PLACEHOLDER_POSTER = "https://placehold.co/500x750/191f2d/a78bfa?text=No+Poster";
+
+const state = {
+  view: "discover",
+  category: "all",
+  query: "",
+  genre: "",
+  sort: "popularity.desc",
+  page: 1,
+  totalPages: 1,
+  movies: [],
+  genres: [],
+  watchlist: loadWatchlist(),
+  activeMovie: null,
+  toastTimer: null
+};
+
+// ==========================================
+// DOM ELEMENTS
+// ==========================================
+
+const elements = {
+  searchForm: document.getElementById("searchForm"),
+  searchInput: document.getElementById("searchInput"),
+  movieGrid: document.getElementById("movieGrid"),
+  watchlistGrid: document.getElementById("watchlistGrid"),
+  watchCount: document.getElementById("watchCount"),
+  genreFilter: document.getElementById("genreFilter"),
+  sortFilter: document.getElementById("sortFilter"),
+  categoryRow: document.getElementById("categoryRow"),
+  sectionTitle: document.getElementById("sectionTitle"),
+  sectionSubtitle: document.getElementById("sectionSubtitle"),
+  resultsMessage: document.getElementById("resultsMessage"),
+  loadingState: document.getElementById("loadingState"),
+  emptyState: document.getElementById("emptyState"),
+  watchlistEmpty: document.getElementById("watchlistEmpty"),
+  discoverSection: document.getElementById("discoverSection"),
+  watchlistSection: document.getElementById("watchlistSection"),
+  pagination: document.getElementById("pagination"),
+  prevPage: document.getElementById("prevPage"),
+  nextPage: document.getElementById("nextPage"),
+  pageIndicator: document.getElementById("pageIndicator"),
+  modal: document.getElementById("movieModal"),
+  modalBackdrop: document.getElementById("modalBackdrop"),
+  modalTitle: document.getElementById("modalTitle"),
+  modalMeta: document.getElementById("modalMeta"),
+  modalOverview: document.getElementById("modalOverview"),
+  modalExtra: document.getElementById("modalExtra"),
+  modalWatchlistButton: document.getElementById("modalWatchlistButton"),
+  heroPoster: document.getElementById("heroPoster"),
+  heroMovieTitle: document.getElementById("heroMovieTitle"),
+  heroMovieRating: document.getElementById("heroMovieRating"),
+  toast: document.getElementById("toast")
+};
+
+// ==========================================
+// HELPERS
+// ==========================================
+
+function loadWatchlist() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("cinefind-watchlist"));
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveWatchlist() {
+  localStorage.setItem(
+    "cinefind-watchlist",
+    JSON.stringify(state.watchlist)
+  );
+  updateWatchCount();
+}
+
+function updateWatchCount() {
+  elements.watchCount.textContent = state.watchlist.length;
+}
+
+function escapeHTML(value = "") {
+  return String(value).replace(/[&<>"']/g, character => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[character]);
+}
+
+function posterURL(path, size = "w500") {
+  return path ? `${IMAGE_BASE}${size}${path}` : PLACEHOLDER_POSTER;
+}
+
+function backdropURL(path) {
+  return path ? `${IMAGE_BASE}w1280${path}` : "";
+}
+
+function formatYear(date) {
+  return date ? date.slice(0, 4) : "Year unknown";
+}
+
+function rating(value) {
+  return Number(value || 0).toFixed(1);
+}
+
+function showToast(message) {
+  elements.toast.textContent = message;
+  elements.toast.classList.add("show");
+
+  clearTimeout(state.toastTimer);
+
+  state.toastTimer = setTimeout(() => {
+    elements.toast.classList.remove("show");
+  }, 2600);
+}
+
+function setLoading(isLoading) {
+  elements.loadingState.hidden = !isLoading;
+  elements.movieGrid.hidden = isLoading;
+
+  if (isLoading) {
+    elements.emptyState.hidden = true;
+    elements.resultsMessage.textContent = "";
+  }
+}
+
+function isSaved(movieId) {
+  return state.watchlist.some(movie => movie.id === movieId);
+}
+
+// ==========================================
+// API REQUEST
+// ==========================================
+
+async function apiRequest(endpoint, params = {}) {
+  if (!API_KEY || API_KEY === "YOUR_TMDB_API_KEY") {
+    throw new Error(
+      "Add your TMDB API key in script.js before using CineFind."
+    );
+  }
+
+  const url = new URL(`${API_BASE}${endpoint}`);
+
+  url.searchParams.set("api_key", API_KEY);
+  url.searchParams.set("language", "en-US");
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== "" && value !== null && value !== undefined) {
+      url.searchParams.set(key, value);
+    }
+  });
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("Your API key is invalid. Check your TMDB key.");
+    }
+
+    if (response.status === 404) {
+      throw new Error("The requested movie information was not found.");
+    }
+
+    throw new Error(`Movie service error (${response.status}). Try again.`);
+  }
+
+  return response.json();
+}
+
+// ==========================================
+// LOAD MOVIE GENRES
+// ==========================================
+
+async function loadGenres() {
+  try {
+    const data = await apiRequest("/genre/movie/list");
+
+    state.genres = data.genres || [];
+
+    elements.genreFilter.innerHTML =
+      '<option value="">All genres</option>' +
+      state.genres.map(genre => `
+        <option value="${genre.id}">
+          ${escapeHTML(genre.name)}
+        </option>
+      `).join("");
+
+  } catch (error) {
+    console.error("Genre loading error:", error);
+    showToast(error.message);
+  }
+}
+
+// ==========================================
+// MOVIE COLLECTION
+// ==========================================
+
+function getMovieEndpoint() {
+  if (state.query.trim()) {
+    return {
+      endpoint: "/search/movie",
+      params: {
+        query: state.query.trim(),
+        page: state.page,
+        include_adult: false
+      }
+    };
+  }
+
+  const categoryEndpoints = {
+    all: "/discover/movie",
+    popular: "/movie/popular",
+    top_rated: "/movie/top_rated",
+    upcoming: "/movie/upcoming"
+  };
+
+  const endpoint = categoryEndpoints[state.category] || "/discover/movie";
+
+  const params = {
+    page: state.page
+  };
+
+  if (state.genre) {
+    if (endpoint === "/discover/movie") {
+      params.with_genres = state.genre;
+    } else {
+      // Apply genre filtering through Discover for all categories.
+      params.with_genres = state.genre;
+      params.sort_by = state.sort;
+      return {
+        endpoint: "/discover/movie",
+        params
+      };
+    }
+  }
+
+  if (endpoint === "/discover/movie") {
+    params.sort_by = state.sort;
+  }
+
+  return { endpoint, params };
+}
+
+async function loadMovies() {
+  if (state.view === "watchlist") return;
+
+  setLoading(true);
+  elements.pagination.hidden = true;
+
+  try {
+    const request = getMovieEndpoint();
+    const data = await apiRequest(request.endpoint, request.params);
+
+    state.movies = data.results || [];
+    state.totalPages = Math.min(data.total_pages || 1, 500);
+
+    renderMovies(state.movies);
+
+    elements.emptyState.hidden = state.movies.length !== 0;
+
+    elements.resultsMessage.textContent = state.query
+      ? `${data.total_results || 0} results for "${state.query}"`
+      : `${data.total_results || 0} movies to explore`;
+
+    updatePagination();
+    updateHero(state.movies[0]);
+
+  } catch (error) {
+    console.error("Movie loading error:", error);
+
+    elements.movieGrid.innerHTML = "";
+    elements.emptyState.hidden = false;
+
+    elements.emptyState.querySelector("h3").textContent =
+      "Unable to load movies";
+
+    elements.emptyState.querySelector("p").textContent = error.message;
+
+    showToast(error.message);
+
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ==========================================
+// RENDER MOVIE CARDS
+// ==========================================
+
+function renderMovies(movies, target = elements.movieGrid) {
+  target.innerHTML = movies.map(movie => {
+    const saved = isSaved(movie.id);
+
+    return `
+      <article class="movie-card" data-movie-id="${movie.id}">
+        <div class="poster-wrap">
+          <img
+            src="${posterURL(movie.poster_path)}"
+            alt="${escapeHTML(movie.title)} poster"
+            loading="lazy"
+            onerror="this.onerror=null;this.src='${PLACEHOLDER_POSTER}'"
+          >
+
+          <span class="rating-pill">
+            ★ ${rating(movie.vote_average)}
+          </span>
+
+          <button
+            class="watch-toggle ${saved ? "saved" : ""}"
+            data-action="watchlist"
+            data-id="${movie.id}"
+            aria-label="${saved ? "Remove from" : "Add to"} watchlist"
+            title="${saved ? "Remove from watchlist" : "Add to watchlist"}"
+          >${saved ? "♥" : "♡"}</button>
+        </div>
+
+        <div class="movie-info">
+          <h3 class="movie-title">${escapeHTML(movie.title)}</h3>
+          <div class="movie-subtitle">
+            <span>${formatYear(movie.release_date)}</span>
+            <span>${movie.vote_count || 0} votes</span>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  if (movies.length === 0) {
+    target.innerHTML = "";
+  }
+}
+
+// ==========================================
+// FEATURED MOVIE
+// ==========================================
+
+function updateHero(movie) {
+  if (!movie) return;
+
+  elements.heroPoster.src = posterURL(movie.poster_path, "w500");
+  elements.heroPoster.alt = `${movie.title} poster`;
+
+  elements.heroMovieTitle.textContent = movie.title;
+  elements.heroMovieRating.textContent =
+    `★ ${rating(movie.vote_average)} / 10  •  ${formatYear(movie.release_date)}`;
+}
+
+// ==========================================
+// WATCHLIST
+// ==========================================
+
+function toggleWatchlist(movie) {
+  const index = state.watchlist.findIndex(item => item.id === movie.id);
+
+  if (index >= 0) {
+    state.watchlist.splice(index, 1);
+    showToast(`${movie.title} removed from your watchlist.`);
+  } else {
+    state.watchlist.push({
+      id: movie.id,
+      title: movie.title,
+      poster_path: movie.poster_path,
+      backdrop_path: movie.backdrop_path,
+      vote_average: movie.vote_average,
+      vote_count: movie.vote_count,
+      release_date: movie.release_date,
+      overview: movie.overview,
+      genre_ids: movie.genre_ids || []
+    });
+
+    showToast(`${movie.title} added to your watchlist.`);
+  }
+
+  saveWatchlist();
+
+  if (state.view === "watchlist") {
+    renderWatchlist();
+  } else {
+    renderMovies(state.movies);
+  }
+
+  if (state.activeMovie?.id === movie.id) {
+    updateModalWatchlistButton();
+  }
+}
+
+function renderWatchlist() {
+  renderMovies(state.watchlist, elements.watchlistGrid);
+
+  elements.watchlistEmpty.hidden = state.watchlist.length !== 0;
+}
+
+function updateModalWatchlistButton() {
+  if (!state.activeMovie) return;
+
+  const saved = isSaved(state.activeMovie.id);
+
+  elements.modalWatchlistButton.textContent = saved
+    ? "♥ Remove from watchlist"
+    : "+ Add to watchlist";
+}
+
+// ==========================================
+// MOVIE DETAILS
+// ==========================================
+
+async function openMovieDetails(movieId) {
+  try {
+    const movie = await apiRequest(`/movie/${movieId}`, {
+      append_to_response: "credits,videos"
+    });
+
+    state.activeMovie = movie;
+
+    elements.modalTitle.textContent = movie.title;
+
+    elements.modalMeta.innerHTML = `
+      <span>★ ${rating(movie.vote_average)} / 10</span>
+      <span>${formatYear(movie.release_date)}</span>
+      <span>${movie.runtime ? `${movie.runtime} min` : "Runtime unavailable"}</span>
+    `;
+
+    elements.modalOverview.textContent =
+      movie.overview || "No description is available for this movie.";
+
+    const genres = (movie.genres || [])
+      .map(genre => escapeHTML(genre.name))
+      .join(" · ");
+
+    const director = (movie.credits?.crew || [])
+      .find(person => person.job === "Director");
+
+    const cast = (movie.credits?.cast || [])
+      .slice(0, 5)
+      .map(person => escapeHTML(person.name))
+      .join(", ");
+
+    elements.modalExtra.innerHTML = `
+      <p><strong>Genres:</strong> ${genres || "Not available"}</p>
+      <p><strong>Director:</strong> ${director ? escapeHTML(director.name) : "Not available"}</p>
+      <p><strong>Cast:</strong> ${cast || "Not available"}</p>
+    `;
+
+    const backdrop = backdropURL(movie.backdrop_path);
+
+    elements.modalBackdrop.style.backgroundImage = backdrop
+      ? `linear-gradient(to bottom, rgba(18,22,34,.05), #121622), url("${backdrop}")`
+      : "linear-gradient(135deg, #382c63, #151b2c)";
+
+    updateModalWatchlistButton();
+
+    elements.modal.hidden = false;
+    document.body.style.overflow = "hidden";
+
+    document.getElementById("closeModal").focus();
+
+  } catch (error) {
+    console.error("Movie detail error:", error);
+    showToast(error.message);
+  }
+}
+
+function closeModal() {
+  elements.modal.hidden = true;
+  document.body.style.overflow = "";
+  state.activeMovie = null;
+}
+
+// ==========================================
+// NAVIGATION
+// ==========================================
+
+function setView(view) {
+  state.view = view;
+
+  document.querySelectorAll(".nav-link").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.view === view
+    );
+  });
+
+  elements.discoverSection.hidden = view === "watchlist";
+  elements.watchlistSection.hidden = view !== "watchlist";
+
+  if (view === "watchlist") {
+    renderWatchlist();
+  } else {
+    loadMovies();
+  }
+}
+
+// ==========================================
+// CATEGORY AND FILTERS
+// ==========================================
+
+function setCategory(category) {
+  state.category = category;
+  state.query = "";
+  state.page = 1;
+
+  elements.searchInput.value = "";
+
+  document.querySelectorAll(".category-chip").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.category === category
+    );
+  });
+
+  const titles = {
+    all: ["Explore movies", "Handpicked discoveries and popular favourites."],
+    popular: ["Popular movies", "Movies people are watching right now."],
+    top_rated: ["Top rated movies", "Highly rated films worth your time."],
+    upcoming: ["Upcoming movies", "Get ready for the next big releases."]
+  };
+
+  const [title, subtitle] = titles[category];
+
+  elements.sectionTitle.textContent = title;
+  elements.sectionSubtitle.textContent = subtitle;
+
+  loadMovies();
+}
+
+function applyFilters() {
+  state.genre = elements.genreFilter.value;
+  state.sort = elements.sortFilter.value;
+  state.page = 1;
+
+  loadMovies();
+}
+
+// ==========================================
+// PAGINATION
+// ==========================================
+
+function updatePagination() {
+  elements.pagination.hidden =
+    state.view === "watchlist" || state.query.length > 0 && state.totalPages <= 1;
+
+  elements.prevPage.disabled = state.page <= 1;
+  elements.nextPage.disabled = state.page >= state.totalPages;
+
+  elements.pageIndicator.textContent =
+    `Page ${state.page} of ${state.totalPages}`;
+}
+
+function changePage(direction) {
+  const nextPage = state.page + direction;
+
+  if (nextPage < 1 || nextPage > state.totalPages) return;
+
+  state.page = nextPage;
+  loadMovies();
+
+  document.getElementById("discoverSection").scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+}
+
+// ==========================================
+// RESET SEARCH
+// ==========================================
+
+function resetSearch() {
+  state.query = "";
+  state.genre = "";
+  state.page = 1;
+  state.category = "all";
+
+  elements.searchInput.value = "";
+  elements.genreFilter.value = "";
+
+  elements.emptyState.querySelector("h3").textContent = "No movies found";
+  elements.emptyState.querySelector("p").textContent =
+    "Try another title or change your filters.";
+
+  setCategory("all");
+}
+
+// ==========================================
+// EVENT LISTENERS
+// ==========================================
+
+elements.searchForm.addEventListener("submit", event => {
+  event.preventDefault();
+
+  const query = elements.searchInput.value.trim();
+
+  if (!query) {
+    showToast("Please enter a movie title to search.");
+    elements.searchInput.focus();
+    return;
+  }
+
+  state.query = query;
+  state.page = 1;
+  state.genre = "";
+  state.category = "all";
+
+  elements.genreFilter.value = "";
+
+  document.querySelectorAll(".category-chip").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.category === "all"
+    );
+  });
+
+  elements.sectionTitle.textContent = "Search results";
+  elements.sectionSubtitle.textContent =
+    `Showing movies matching "${query}".`;
+
+  setView("discover");
+});
+
+elements.categoryRow.addEventListener("click", event => {
+  const button = event.target.closest(".category-chip");
+
+  if (!button) return;
+
+  setCategory(button.dataset.category);
+});
+
+elements.genreFilter.addEventListener("change", applyFilters);
+elements.sortFilter.addEventListener("change", applyFilters);
+
+elements.prevPage.addEventListener("click", () => changePage(-1));
+elements.nextPage.addEventListener("click", () => changePage(1));
+
+elements.movieGrid.addEventListener("click", event => {
+  const watchButton = event.target.closest("[data-action='watchlist']");
+
+  if (watchButton) {
+    event.stopPropagation();
+
+    const movieId = Number(watchButton.dataset.id);
+    const movie = state.movies.find(item => item.id === movieId);
+
+    if (movie) toggleWatchlist(movie);
+    return;
+  }
+
+  const card = event.target.closest(".movie-card");
+
+  if (card) {
+    openMovieDetails(Number(card.dataset.movieId));
+  }
+});
+
+elements.watchlistGrid.addEventListener("click", event => {
+  const watchButton = event.target.closest("[data-action='watchlist']");
+
+  if (watchButton) {
+    event.stopPropagation();
+
+    const movieId = Number(watchButton.dataset.id);
+    const movie = state.watchlist.find(item => item.id === movieId);
+
+    if (movie) toggleWatchlist(movie);
+    return;
+  }
+
+  const card = event.target.closest(".movie-card");
+
+  if (card) {
+    openMovieDetails(Number(card.dataset.movieId));
+  }
+});
+
+document.querySelectorAll(".nav-link").forEach(button => {
+  button.addEventListener("click", () => {
+    setView(button.dataset.view);
+  });
+});
+
+elements.modalWatchlistButton.addEventListener("click", () => {
+  if (state.activeMovie) {
+    toggleWatchlist(state.activeMovie);
+  }
+});
+
+document.getElementById("closeModal").addEventListener("click", closeModal);
+
+elements.modal.addEventListener("click", event => {
+  if (event.target === elements.modal) {
+    closeModal();
+  }
+});
+
+document.getElementById("resetSearch").addEventListener("click", resetSearch);
+document.getElementById("browseMovies").addEventListener("click", () => {
+  setView("discover");
+});
+
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && !elements.modal.hidden) {
+    closeModal();
+  }
+});
+
+// ==========================================
+// INITIALIZE APP
+// ==========================================
+
+async function initializeApp() {
+  updateWatchCount();
+
+  if (!API_KEY || API_KEY === "YOUR_TMDB_API_KEY") {
+    setLoading(false);
+    elements.emptyState.hidden = false;
+    elements.emptyState.querySelector("h3").textContent =
+      "Your movie explorer is almost ready";
+    elements.emptyState.querySelector("p").textContent =
+      "Add your TMDB API key in script.js to load live movies.";
+    elements.pagination.hidden = true;
+    showToast("Add your TMDB API key in script.js to get started.");
+    return;
+  }
+
+  await loadGenres();
+  await loadMovies();
+}
+
+initializeApp();
