@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="CineFind is your destination for discovering trending movies, exploring genres and building your personal watchlist.">
+  <meta name="theme-color" content="#090b12">
+  <title>CineFind — Discover Your Next Movie</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="CineFind home">
+        <span class="brand-icon">C</span>
+        <span>Cine<span>Find</span></span>
+      </a>
+
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-link active" data-view="discover">Discover</button>
+        <button class="nav-link" data-view="trending">Trending</button>
+        <button class="nav-link" data-view="watchlist">
+          My Watchlist <span class="watch-count" id="watchCount">0</span>
+        </button>
+      </nav>
+
+      <div class="header-note">
+        <span class="live-dot"></span>
+        Your next favourite film awaits
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> YOUR PERSONAL MOVIE GUIDE</p>
+          <h1>Find your next<br><span>great movie.</span></h1>
+          <p class="hero-description">
+            Explore thousands of movies, discover hidden gems
+            and build a watchlist worth staying up for.
+          </p>
+
+          <form class="search-form" id="searchForm">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input
+              id="searchInput"
+              type="search"
+              placeholder="Search movies, titles..."
+              aria-label="Search movies"
+              autocomplete="off"
+            >
+            <button type="submit">Search <span>→</span></button>
+          </form>
+
+          <div class="hero-meta">
+            <span><i class="meta-star">★</i> Discover top-rated films</span>
+            <span>•</span>
+            <span>Build your watchlist</span>
+          </div>
+        </div>
+
+        <div class="hero-art" id="heroArt">
+          <div class="hero-art-glow"></div>
+          <div class="hero-poster-wrap">
+            <img id="heroPoster" src="" alt="Featured movie poster">
+          </div>
+          <div class="hero-floating-card">
+            <span class="floating-label">FEATURED DISCOVERY</span>
+            <strong id="heroMovieTitle">Discover something new</strong>
+            <span id="heroMovieRating">Explore the collection</span>
+          </div>
+          <div class="hero-orbit orbit-one"></div>
+          <div class="hero-orbit orbit-two"></div>
+        </div>
+      </section>
+
+      <section class="content-section" id="discoverSection">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">THE COLLECTION</p>
+            <h2 id="sectionTitle">Explore movies</h2>
+            <p class="section-subtitle" id="sectionSubtitle">
+              Handpicked discoveries and popular favourites.
+            </p>
+          </div>
+
+          <div class="filter-controls">
+            <label class="visually-hidden" for="genreFilter">Filter by genre</label>
+            <select id="genreFilter">
+              <option value="">All genres</option>
+            </select>
+            <label class="visually-hidden" for="sortFilter">Sort movies</label>
+            <select id="sortFilter">
+              <option value="popularity.desc">Most popular</option>
+              <option value="vote_average.desc">Top rated</option>
+              <option value="primary_release_date.desc">Newest first</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="category-row" id="categoryRow">
+          <button class="category-chip active" data-category="all">All movies</button>
+          <button class="category-chip" data-category="popular">Popular</button>
+          <button class="category-chip" data-category="top_rated">Top rated</button>
+          <button class="category-chip" data-category="upcoming">Upcoming</button>
+        </div>
+
+        <div class="results-message" id="resultsMessage" aria-live="polite"></div>
+        <div class="movie-grid" id="movieGrid" aria-live="polite"></div>
+
+        <div class="loading-state" id="loadingState" hidden>
+          <div class="loader"></div>
+          <p>Finding your next favourite movie...</p>
+        </div>
+
+        <div class="empty-state" id="emptyState" hidden>
+          <span>🎬</span>
+          <h3>No movies found</h3>
+          <p>Try another title or change your filters.</p>
+          <button class="outline-button" id="resetSearch">Explore movies</button>
+        </div>
+
+        <div class="pagination" id="pagination">
+          <button class="outline-button" id="prevPage" disabled>← Previous</button>
+          <span id="pageIndicator">Page 1</span>
+          <button class="outline-button" id="nextPage">Next →</button>
+        </div>
+      </section>
+
+      <section class="watchlist-section" id="watchlistSection" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SAVED FOR LATER</p>
+            <h2>My watchlist</h2>
+            <p class="section-subtitle">All the films you don't want to miss.</p>
+          </div>
+        </div>
+        <div class="movie-grid" id="watchlistGrid"></div>
+        <div class="empty-state" id="watchlistEmpty" hidden>
+          <span>♡</span>
+          <h3>Your watchlist is waiting</h3>
+          <p>Save movies you want to watch and find them here.</p>
+          <button class="outline-button" id="browseMovies">Discover movies</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand footer-brand" href="#">
+        <span class="brand-icon">C</span>
+        <span>Cine<span>Find</span></span>
+      </a>
+      <p>Discover stories. Find favourites. Enjoy cinema.</p>
+      <p class="footer-credit">
+        Movie data provided by
+        <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>.
+        This product uses the TMDB API but is not endorsed or certified by TMDB.
+      </p>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop" id="movieModal" hidden>
+    <section class="movie-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" id="closeModal" aria-label="Close movie details">×</button>
+      <div class="modal-backdrop-image" id="modalBackdrop"></div>
+      <div class="modal-content">
+        <p class="eyebrow">MOVIE DETAILS</p>
+        <h2 id="modalTitle">Movie title</h2>
+        <div class="modal-meta" id="modalMeta"></div>
+        <p class="modal-overview" id="modalOverview"></p>
+        <div class="modal-extra" id="modalExtra"></div>
+        <button class="primary-button" id="modalWatchlistButton">+ Add to watchlist</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
